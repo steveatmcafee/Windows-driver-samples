@@ -66,7 +66,7 @@ HKR,"Instances\"%Instance1.Name%,"Altitude",0x00000000,%Instance1.Altitude%
 HKR,"Instances\"%Instance1.Name%,"Flags",0x00010001,%Instance1.Flags%
 HKR,,"LocalScanTimeout",0x00010001,%LocalScanTimeout%
 HKR,,"NetworkScanTimeout",0x00010001,%NetworkScanTimeout%
-HKR,,"SupportedFeatures",0x00010001,0x3
+HKR,,"SupportedFeatures",0x00010001,0xb
 
 ;
 ; Copy Files

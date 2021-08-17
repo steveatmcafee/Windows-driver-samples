@@ -1901,6 +1901,48 @@ Return Value:
     return FLT_PREOP_SUCCESS_NO_CALLBACK;
 }
 
+
+struct BypassIoTests {
+    NTSTATUS statusCode;
+    FLT_PREOP_CALLBACK_STATUS result;
+};
+
+struct BypassIoTests testReturnValues[] = {
+    { STATUS_SUCCESS, FLT_PREOP_SUCCESS_NO_CALLBACK },
+    /*C:\Windows\system32>fsutil bypassio state c:\Users\steve\Desktop\avscan.exe
+BypassIo on "c:\Users\steve\Desktop\avscan.exe" is currently supported
+    Storage Type:   NVMe
+    Storage Driver: BypassIo compatible*/
+    { STATUS_NOT_SUPPORTED_WITH_MONITORING, FLT_PREOP_COMPLETE },
+    /*C:\Windows\system32>fsutil bypassio state c:\Users\steve\Desktop\avscan.exe
+BypassIo on "c:\Users\steve\Desktop\avscan.exe" is not currently supported
+    Status:  317 (The system cannot find message text for message number 0x%1 in the message file for %2)
+    Driver:                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         
+    Reason:  ???
+    Storage Type:   NVMe
+    Storage Driver: Not BypassIo Compatible*/
+    { STATUS_NOT_SUPPORTED_WITH_MONITORING, FLT_PREOP_SUCCESS_NO_CALLBACK },
+    /*C:\Windows\system32>fsutil bypassio state c:\Users\steve\Desktop\avscan.exe
+BypassIo on "c:\Users\steve\Desktop\avscan.exe" is currently supported
+    Storage Type:   NVMe
+    Storage Driver: BypassIo compatible*/
+    { STATUS_NOT_SUPPORTED, FLT_PREOP_COMPLETE },
+    /* C:\Windows\system32 > fsutil bypassio state c:\Users\steve\Desktop\avscan.exe
+    BypassIo on "c:\Users\steve\Desktop\avscan.exe" is not currently supported
+        Status : 317 (The system cannot find message text for message number 0x % 1 in the message file for % 2)
+        Driver :
+        Reason : ???
+        Storage Type : NVMe
+        Storage Driver : Not BypassIo Compatible
+    */
+    { STATUS_INVALID_PARAMETER, FLT_PREOP_COMPLETE },
+    /*C:\Windows\system32>fsutil bypassio state c:\Users\steve\Desktop\avscan.exe
+BypassIo on "c:\Users\steve\Desktop\avscan.exe" is currently supported
+    Storage Type:   NVMe
+    Storage Driver: Not BypassIo Compatible*/
+};
+
+volatile LONG currentTest = 0;
 FLT_PREOP_CALLBACK_STATUS
 AvPreFsControl (
     _Inout_ PFLT_CALLBACK_DATA Data,
@@ -1945,6 +1987,22 @@ Return Value:
         
         Data->IoStatus.Status = STATUS_NOT_SUPPORTED;
         return FLT_PREOP_COMPLETE;
+    }
+    else if (Data->Iopb->Parameters.FileSystemControl.Common.FsControlCode == FSCTL_MANAGE_BYPASS_IO ) {
+        // Normally we would want to test some features of the IO to decide if we wanted to block it, but for this test.....
+        //FS_BPIO_INPUT* bypassData = (FS_BPIO_INPUT*)(Data->Iopb->Parameters.FileSystemControl.Buffered.SystemBuffer);
+        size_t testCount = sizeof(testReturnValues)/ sizeof(testReturnValues[0]);
+
+        LONG testId = InterlockedIncrement(&currentTest);
+        LONG testOrg = testId;
+        testId = testId % testCount;
+        InterlockedCompareExchange(&currentTest, testId, testOrg );
+        if (testReturnValues[testId].statusCode != STATUS_SUCCESS) {
+            UNICODE_STRING failureReason;
+            RtlInitUnicodeString(&failureReason, L"avscan unable to allow bypassio");
+            FltVetoBypassIo(Data, FltObjects, testReturnValues[testId].statusCode, &failureReason);
+        }
+        return testReturnValues[testId].result;
     }
     return AvPreOperationCallback(Data, FltObjects, CompletionContext);
 }
