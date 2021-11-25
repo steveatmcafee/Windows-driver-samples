@@ -28,17 +28,19 @@ BOOLEAN TdProcessNotifyRoutineSet2 = FALSE;
 // allow filter the requested access
 BOOLEAN TdbProtectName = FALSE;
 BOOLEAN TdbRejectName = FALSE;
+#define TAGDEF(a,b,c,d) ((a)+((b)<<8)+((c)<<16)+((d)<<24))
+#define TAGDEFS(s) (TAGDEF( s[0], s[1], s[2], s[3]) )
+ULONG DRIVER_TAG = TAGDEF('M', 'F', 'E', '0');
 
 //
 // Function declarations
 //
 DRIVER_INITIALIZE  DriverEntry;
-
 _Dispatch_type_(IRP_MJ_CREATE) DRIVER_DISPATCH TdDeviceCreate;
 _Dispatch_type_(IRP_MJ_CLOSE) DRIVER_DISPATCH TdDeviceClose;
 _Dispatch_type_(IRP_MJ_CLEANUP) DRIVER_DISPATCH TdDeviceCleanup;
 _Dispatch_type_(IRP_MJ_DEVICE_CONTROL) DRIVER_DISPATCH TdDeviceControl;
-
+extern int fibValue;
 DRIVER_UNLOAD   TdDeviceUnload;
 
 VOID
@@ -112,6 +114,84 @@ TdCreateProcessNotifyRoutine2 (
         );
     }
 }
+
+ULONG GetKeyInfoSize(HANDLE hRegistryKey, PUNICODE_STRING pValueName) {
+    NTSTATUS ntStatus = STATUS_SUCCESS;
+
+    ULONG ulKeyInfoSizeNeeded;
+    ntStatus = ZwQueryValueKey(hRegistryKey, pValueName, KeyValueFullInformation, 0, 0, &ulKeyInfoSizeNeeded);
+    if (ntStatus == STATUS_BUFFER_TOO_SMALL || ntStatus == STATUS_BUFFER_OVERFLOW) {
+        // Expected don't worry - when ZwQueryValueKey fails with one of the above statuses, it returns the size needed
+        return ulKeyInfoSizeNeeded;
+    }
+    else {
+        KdPrint((DRIVER_PREFIX "Could not get key info size (0x%08X)\n", ntStatus));
+    }
+
+    return 0;
+}
+
+void ReadRegistryValue(PUNICODE_STRING RegistryPath)
+{
+    NTSTATUS ntStatus = STATUS_SUCCESS;
+
+    UNICODE_STRING valueName = RTL_CONSTANT_STRING(L"FibName");
+    HANDLE hRegistryKey;
+    PKEY_VALUE_FULL_INFORMATION pKeyInfo = NULL;
+
+    // Create object attributes for registry key querying
+    OBJECT_ATTRIBUTES ObjectAttributes = { 0 };
+    InitializeObjectAttributes(&ObjectAttributes, RegistryPath, OBJ_CASE_INSENSITIVE | OBJ_KERNEL_HANDLE, NULL, NULL);
+
+    do {
+        ntStatus = ZwOpenKey(&hRegistryKey, KEY_QUERY_VALUE, &ObjectAttributes);
+        if (!NT_SUCCESS(ntStatus)) {
+            KdPrint((DRIVER_PREFIX "Registry key open failed (0x%08X)\n", ntStatus));
+            break;
+        }
+
+        ULONG ulKeyInfoSize;
+        ULONG ulKeyInfoSizeNeeded = GetKeyInfoSize(hRegistryKey, &valueName);
+        if (ulKeyInfoSizeNeeded == 0) {
+            KdPrint((DRIVER_PREFIX "Value not found\n"));
+            break;
+        }
+        ulKeyInfoSize = ulKeyInfoSizeNeeded;
+
+        pKeyInfo = (PKEY_VALUE_FULL_INFORMATION)ExAllocatePoolWithTag(NonPagedPool, ulKeyInfoSize, DRIVER_TAG);
+        if (pKeyInfo == NULL) {
+            KdPrint((DRIVER_PREFIX "Could not allocate memory for KeyValueInfo\n"));
+            break;
+        }
+        RtlZeroMemory(pKeyInfo, ulKeyInfoSize);
+
+        ntStatus = ZwQueryValueKey(hRegistryKey, &valueName, KeyValueFullInformation, pKeyInfo, ulKeyInfoSize, &ulKeyInfoSizeNeeded);
+        if (!NT_SUCCESS(ntStatus) || ulKeyInfoSize != ulKeyInfoSizeNeeded) {
+            KdPrint((DRIVER_PREFIX "Registry value querying failed (0x%08X)\n", ntStatus));
+            break;
+        }
+
+        // your data
+        ULONG someLong = *(ULONG*)((ULONG_PTR)pKeyInfo + pKeyInfo->DataOffset);
+        fibValue = someLong;
+    } while (0);
+
+    // cleanup
+    if (hRegistryKey) {
+        ZwClose(hRegistryKey);
+    }
+
+    if (pKeyInfo) {
+        ExFreePoolWithTag(pKeyInfo, DRIVER_TAG);
+    }
+
+    if (!NT_SUCCESS(ntStatus)) {
+        // Here you can set a default data if something failed it the way
+    }
+
+    // ...
+}
+
 
 //
 // DriverEntry

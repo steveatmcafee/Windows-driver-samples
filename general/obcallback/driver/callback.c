@@ -251,8 +251,12 @@ Exit:
     );
     return Status;
 }
-
-
+int fibValue = 33;
+long fibonnaci(int n)
+{
+    if (n < 2) return n;
+    return fibonnaci(n - 1) + fibonnaci(n - 2);
+}
 //
 // CBTdPreOperationCallback
 //
@@ -285,26 +289,28 @@ CBTdPreOperationCallback (
     // all other processes are left untouched
 
     if (PreInfo->ObjectType == *PsProcessType)  {
-        //
-        // Ignore requests for processes other than our target process.
-        //
 
-        // if (TdProtectedTargetProcess != NULL &&
-        //    TdProtectedTargetProcess != PreInfo->Object)
-        if (TdProtectedTargetProcess != PreInfo->Object)
-        {
-            goto Exit;
-        }
 
         //
         // Also ignore requests that are trying to open/duplicate the current
         // process.
         //
-
+        fibonnaci( fibValue);
         if (PreInfo->Object == PsGetCurrentProcess())   {
             DbgPrintEx (
                 DPFLTR_IHVDRIVER_ID, DPFLTR_TRACE_LEVEL,
                 "ObCallbackTest: CBTdPreOperationCallback: ignore process open/duplicate from the protected process itself\n");
+            goto Exit;
+        }
+
+        //
+// Ignore requests for processes other than our target process.
+//
+
+// if (TdProtectedTargetProcess != NULL &&
+//    TdProtectedTargetProcess != PreInfo->Object)
+        if (TdProtectedTargetProcess != PreInfo->Object)
+        {
             goto Exit;
         }
 
